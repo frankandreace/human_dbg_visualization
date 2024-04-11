@@ -1,17 +1,16 @@
 #!/bin/bash
 
-# Script Name: unitig_dbg_generator
+# Script Name: position_dbg_generator
 # Author: Francesco Andreace
 # Date: 9th of April 2024
-# Description: bash script to create a position aware unitig dbg in gfa format of a specific (repeat-masked) region of the genome or chromosome from a set of samples.
+# Description: bash/awk script to create a position aware unitig dbg in gfa format of a specific (repeat-masked) region of the genome or chromosome from a set of samples.
 # Input: 
 #   - the desired chromosome or part of the genome, repeat masked
 #   - a fof of the set of samples to consider
 # Tools dependencies:
 #   - minimap2 to select reads
 #   - ggcat to build the dbg
-# DISCLAIMER: THE SCRIPT CONSIDERS THESE 2 TOOLS ALREADY INSTALLED IN YOUR SISTER / CLUSTER
-
+# DISCLAIMER: THE SCRIPT CONSIDERS THESE 2 TOOLS (minimap2, ggcat) ARE ALREADY INSTALLED IN YOUR SISTER / CLUSTER
 
 SCRIPT_NAME="position_dbg_generator" #$(basename $0)
 
@@ -117,6 +116,31 @@ done < $input_fof
 # BUILD (C)CDBG WITH GGCAT 
 ggcat build -l $input_fof.temp -o $output_dir/unitigs.fa -j $thr -s $DEFAULT_MIN_COUNT -k $k_len
 
+awk '
+BEGIN{
+        old = "H\tVN:Z:1.0\tks:i:" ARGV[2]
+        ks = ARGV[2] - 1
+}!/^>/{
+        printf "%s", $1
+        next
+}{
+        x = ""
+        $1 = substr($1,2)
+        for(i=2; i<=NF; i++){
+                if($i ~ /^LN/)
+                        x="\t" $i "\t" x
+                else if($i ~ /^L/){
+                        split($i, a, ":")
+                        x = x "\nL\t"$1"\t"a[2]"\t"a[3]"\t"a[4]"\t" ks "M"
+                }
+        }
+        printf "%s\nS\t%s\t", old, $1
+        old = x
+}END{
+        print old
+}
+' < $output_dir/unitigs.fa > $output_dir/unitigs.gfa
+
 minimap2 -xsr --secondary=no $input_fasta $output_dir/unitigs.fa | awk '
     BEGIN { 
     FS="\t" 
@@ -175,6 +199,6 @@ BEGIN {
         next;
     }
     !/^S/ {print $0; next;}
-' $1 - > $3
+' $output_dir/unitigs.gfa - > $3
 
 
