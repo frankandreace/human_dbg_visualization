@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # Script Name: unitig_dbg_generator
@@ -17,9 +16,9 @@
 SCRIPT_NAME="position_dbg_generator" #$(basename $0)
 
 #SETTING DEFAULT PARAMETERS
-DEFAULT_KSIZE=31
+DEFAULT_KSIZE=61
 DEFAULT_THREADS=8
-DEFAULT_MIN_COUNT=2
+DEFAULT_MIN_COUNT=1
 DEFAULT_OUTDIR=output
 
 USAGE=$'\nUsage: '"${SCRIPT_NAME}"' [-k KMER-SIZE] [-t NUM-THREADS] [-c MIN-COUNT] [-o OUT-DIR] <input_region.fa> <input_seqfile.seq>
@@ -33,8 +32,8 @@ Arguments:
 
 
 Positional arguments:
-     <input_file>         input region (fasta)
-     <input_file>         input seqfile (fof)
+     <input_fasta>         input region (fasta)
+     <input_file_of_files>         list of unitigs/assemblies (txt)
 '
 
 
@@ -44,7 +43,7 @@ thr=$DEFAULT_THREADS
 min_count=$DEFAULT_MIN_COUNT
 output_dir=$DEFAULT_OUTDIR
 
-while getopts ":hktco" flag; do
+while getopts ":hk:t:c:o:" flag; do
    case "${flag}" in
       h) $(>&2 echo "${USAGE}")
          exit 0
@@ -53,9 +52,12 @@ while getopts ":hktco" flag; do
          ;;
       t) thr=${OPTARG}
          ;;
-      c) maxlen=${OPTARG}
+      o) output_dir=${OPTARG}
          ;;
-      o) output_dir=${tOPTARG}
+      c) min_count=${OPTARG}
+         ;;
+      ?) $(>&2 echo "Error. Option not recognised.\n${USAGE}")
+         exit 0
          ;;
     esac
 done
@@ -73,9 +75,12 @@ then
 fi
 
 input_fasta=${@:$OPTIND:1}
-input_file=${@:$OPTIND+1:1}
+input_fof=${@:$OPTIND+1:1}
 
 # MAP READS FOF WITH MINIMAP2 TO SELECTED REGION / CHROMOSOME / MASKED GENOME AND TAKE OUT ONLY READS MAPPING TO SELECTED FILE 
+
+eho $input_fasta > $input_fof.temp
+
 while IFS= read -r sample; do
     minimap2 -xsr --secondary=no $input_fasta $sample | awk '
     BEGIN { 
@@ -110,3 +115,66 @@ while IFS= read -r sample; do
 done < $input_fof
 
 # BUILD (C)CDBG WITH GGCAT 
+ggcat build -l $input_fof.temp -o $output_dir/unitigs.fa -j $thr -s $DEFAULT_MIN_COUNT -k $k_len
+
+minimap2 -xsr --secondary=no $input_fasta $output_dir/unitigs.fa | awk '
+    BEGIN { 
+    FS="\t" 
+    OFS="\t" 
+    ORS="\n"
+    sum_0=0; sum_60=0; sum_diff=0; count=0 
+    }
+    { count++
+    if ($12 == 0) {sum_0++; print $1, $9, $12} 
+    if ($12 == 60) {sum_60++;  print $1, $9, $12}
+    if ($12 != 0 && $12 != 60) {sum_diff ++; print $1, $9, $12} 
+    } 
+    END { 
+        print "alignment_score. 0:" sum_0/count " (" sum_0 ") ; 60:" sum_60/count " (" sum_60 ") ; !=: " sum_diff/count " (" sum_diff ")" > "stats.tsv"
+        print "total sum: "sum_0+sum_60+sum_diff, " ; counted lines: "count >> "stats.tsv" 
+    }
+    ' | sort -k2,2n \
+    | awk '
+    BEGIN {
+    FS="\t"
+    OFS="\t"
+    ORS="\n"
+    pos_id=0 
+    }
+    {
+        if ($3 == 60) {print $1, pos_id++, "0"}
+        else {print $1, pos_id++, "1"}
+    }
+    ' |sort -k1,1n | \
+awk '
+BEGIN {
+    FS="\t"
+    OFS="\t"
+    ORS="\n"
+    current_utg_id = -1
+    }
+    FNR != NR { exit }
+    /^S/ {
+        old_line=$0
+        curr_segment=$2
+        while ( curr_segment > current_utg_id) {
+            if (getline < ARGV[2] > 0) {
+                current_utg_id = $1
+                current_utg_pos = $2
+                pos_flag=$3
+            }
+            else { break }
+        }
+        if ( curr_segment == current_utg_id ) { 
+            if (pos_flag == 0) {print old_line "\tfx:f:" current_utg_pos }
+            else {print old_line "\tmv:f:" current_utg_pos }
+            }
+        else {
+            print old_line
+            }
+        next;
+    }
+    !/^S/ {print $0; next;}
+' $1 - > $3
+
+
