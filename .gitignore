@@ -1,0 +1,5 @@
+data/
+*.tsv
+scripts/k_parser.sh
+scripts/run_scripts.sh
+output/
