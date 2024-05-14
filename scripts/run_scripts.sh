@@ -1,3 +1,4 @@
+#!/bin/bash
 
 # MAP UNITIGS TO THE REFERENCE
 ./map_utgs_to_reference.sh ../data/sequences/chr18.fa ../data/unitigs/unitigs_chr18_masked.fa ../data/processed/unitigs_chr18_masked_position.tsv

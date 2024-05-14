@@ -1,3 +1,4 @@
+#!/bin/bash
 infile=$1
 outfile=$2
 ksize=$3

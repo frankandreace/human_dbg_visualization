@@ -78,7 +78,7 @@ input_fof=${@:$OPTIND+1:1}
 
 # MAP READS FOF WITH MINIMAP2 TO SELECTED REGION / CHROMOSOME / MASKED GENOME AND TAKE OUT ONLY READS MAPPING TO SELECTED FILE 
 
-eho $input_fasta > $input_fof.temp
+#echo $input_fasta > $input_fof.temp
 
 while IFS= read -r sample; do
     minimap2 -xsr --secondary=no $input_fasta $sample | awk '
@@ -88,58 +88,42 @@ while IFS= read -r sample; do
     ORS="\n"
     curr_mapped_read = -1
     print_line=0
+    stderr="/dev/stderr"
     }
     FNR != NR { exit }
     />/ {
     old_line=$0
-    current_read_id=sub(">","",$1)
-        while ( curr_mapped_read < current_read_id) {
-            if (getline < ARGV[2] > 0) {
-                curr_mapped_read = $1
-                current_pos = $2
-            }
-            else { break }
+    sub(">","",$1)
+    current_read_id=$1
+    while ( curr_mapped_read < current_read_id) {
+        print curr_mapped_read, current_read_id > stderr
+        if (getline < ARGV[2] > 0) {
+            curr_mapped_read = $1
+            current_pos = $2
+            print curr_mapped_read, current_read_id, current_pos > stderr
         }
-        if ( curr_mapped_read == current_read_id ) { 
-            print old_line; print_line=1
-            }
-        next;
+        else { break; print "break" > stderr }
+    }
+    if ( curr_mapped_read == current_read_id ) { 
+        print old_line; print_line=1
+        print old_line > stderr
+        }
+    next;
     }
     /!>/ { if (print_line==1) {print $0; print_line=0}
         next;
     }
     ' $sample - > $sample.temp
     echo $sample.temp >> $input_fof.temp
+    echo "FILTERING DONE"
 
 done < $input_fof
 
 # BUILD (C)CDBG WITH GGCAT 
-ggcat build -l $input_fof.temp -o $output_dir/unitigs.fa -j $thr -s $DEFAULT_MIN_COUNT -k $k_len
+mkdir -p $output_dir
+ggcat build -l $input_fof.temp -o $output_dir/unitigs.fa -j $thr -s $DEFAULT_MIN_COUNT -e -k $k_len
 
-awk '
-BEGIN{
-        old = "H\tVN:Z:1.0\tks:i:" ARGV[2]
-        ks = ARGV[2] - 1
-}!/^>/{
-        printf "%s", $1
-        next
-}{
-        x = ""
-        $1 = substr($1,2)
-        for(i=2; i<=NF; i++){
-                if($i ~ /^LN/)
-                        x="\t" $i "\t" x
-                else if($i ~ /^L/){
-                        split($i, a, ":")
-                        x = x "\nL\t"$1"\t"a[2]"\t"a[3]"\t"a[4]"\t" ks "M"
-                }
-        }
-        printf "%s\nS\t%s\t", old, $1
-        old = x
-}END{
-        print old
-}
-' < $output_dir/unitigs.fa > $output_dir/unitigs.gfa
+$output_dir/unitigs.fa $k_len > $output_dir/unitigs.gfa
 
 minimap2 -xsr --secondary=no $input_fasta $output_dir/unitigs.fa | awk '
     BEGIN { 
@@ -200,5 +184,3 @@ BEGIN {
     }
     !/^S/ {print $0; next;}
 ' $output_dir/unitigs.gfa - > $3
-
-

@@ -1,3 +1,6 @@
+#!/bin/bash
+
+
 #map unitigs to reference and detect position in the chromosome
 
 minimap2 -xsr --secondary=no $1 $2 | awk '
@@ -29,11 +32,3 @@ minimap2 -xsr --secondary=no $1 $2 | awk '
         else {print $1, pos_id++, "1"}
     }
     ' |sort -k1,1n > $3
-
-    #    | awk '
-    #BEGIN {
-    #FS=","
-    #FS="\t"
-    #}
-    #{print $1, $2}
-    #' 
